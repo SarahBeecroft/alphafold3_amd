@@ -122,4 +122,8 @@ def has_triton_support() -> bool:
     return False
 
   # Only currently supported for Ampere and above.
-  return float(jax.devices()[0].compute_capability) >= 8.0
+  cc = jax.devices()[0].compute_capability
+  try:
+      return float(cc) >= 8.0
+  except ValueError: # for rocm - it will be e.g. gfx90a on AMD MI250x and cause a valueerror
+      return False

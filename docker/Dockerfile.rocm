@@ -68,10 +68,17 @@ RUN pip3 install jaxlib-0.4.31-cp312-cp312-manylinux_2_28_x86_64.whl \
 
 # Copy the AlphaFold 3 source code from the local machine to the container and
 # set the working directory to there.
-
 # built off  751a4b8 with patches implemented in gbouras13 fork
 
-COPY . /app/alphafold
+# COPY . /app/alphafold
+# WORKDIR /app/alphafold
+
+WORKDIR /app
+
+# Clone your patched repo
+RUN git clone --branch amd_patch_branch --depth 1 https://github.com/gbouras13/alphafold3.git alphafold
+
+# change workdir
 WORKDIR /app/alphafold
 
 # Install the Python dependencies AlphaFold 3 needs.
