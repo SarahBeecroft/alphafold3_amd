@@ -73,6 +73,7 @@ RUN pip3 install jaxlib-0.4.31-cp312-cp312-manylinux_2_28_x86_64.whl \
 # COPY . /app/alphafold
 # WORKDIR /app/alphafold
 
+RUN echo recopy
 WORKDIR /app
 
 # Clone your patched repo
