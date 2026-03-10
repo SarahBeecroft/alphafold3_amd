@@ -778,9 +778,12 @@ def main(_):
     # Fail early on incompatible devices, but only if we're running inference.
     gpu_devices = jax.local_devices(backend='gpu')
     if gpu_devices:
-      compute_capability = float(
-          gpu_devices[_GPU_DEVICE.value].compute_capability
-      )
+      compute_capability_s = str(gpu_devices[_GPU_DEVICE.value].compute_capability)
+      if compute_capability_s.startswith("gfx"):
+        compute_capability = 642.0
+      else:
+        compute_capability = float(compute_capability_s)
+
       if compute_capability < 6.0:
         raise ValueError(
             'AlphaFold 3 requires at least GPU compute capability 6.0 (see'
