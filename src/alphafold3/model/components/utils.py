@@ -35,10 +35,12 @@ def remove_invalidly_typed_feats(
 
 
 def bfloat16_getter(next_getter, value, context):
-  """Ensures that a bfloat16 parameter is provided by casting if necessary."""
-  if context.original_dtype == jnp.bfloat16:
-    if value.dtype != jnp.bfloat16:
-      value = value.astype(jnp.bfloat16)
+  """Ensures parameter dtype consistency, casting bf16 to f32 on AMD GPUs."""
+  # On AMD GPUs, the LLVM AMDGPU backend cannot lower bool->bf16 casts
+  # (uint_to_fp bf16). To avoid this, we force all parameters to f32.
+  # bf16 checkpoint weights are losslessly promoted to f32.
+  if value.dtype == jnp.bfloat16:
+    value = value.astype(jnp.float32)
   return next_getter(value)
 
 

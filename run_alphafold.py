@@ -53,6 +53,35 @@ import jax
 from jax import numpy as jnp
 import numpy as np
 
+# =============================================================================
+# AMD ROCm LLVM workaround: prevent bf16 from appearing in the JAX trace.
+# The AMDGPU LLVM backend cannot lower uint_to_fp (bool->bf16) instructions.
+# XLA fusion passes generate these when bf16 tensors exist in the graph.
+# This monkey-patch intercepts ALL type conversions and redirects bf16 to f32,
+# ensuring the HLO graph never contains bf16 operations.
+# =============================================================================
+_original_convert_element_type = jax.lax.convert_element_type
+
+def _amd_safe_convert_element_type(operand, new_dtype):
+    """Intercept bf16 casts and redirect to f32 for AMD GPU compatibility."""
+    resolved = jnp.dtype(new_dtype)
+    if resolved == jnp.bfloat16:
+        return _original_convert_element_type(operand, jnp.float32)
+    return _original_convert_element_type(operand, new_dtype)
+
+jax.lax.convert_element_type = _amd_safe_convert_element_type
+
+# Also patch jnp.asarray and Array.astype paths that may bypass lax
+_original_jnp_asarray = jnp.asarray
+
+def _amd_safe_asarray(a, dtype=None, **kwargs):
+    if dtype is not None and jnp.dtype(dtype) == jnp.bfloat16:
+        dtype = jnp.float32
+    return _original_jnp_asarray(a, dtype=dtype, **kwargs)
+
+jnp.asarray = _amd_safe_asarray
+# =============================================================================
+
 
 _HOME_DIR = pathlib.Path(os.environ.get('HOME'))
 _DEFAULT_MODEL_DIR = _HOME_DIR / 'models'
@@ -244,7 +273,7 @@ _BUCKETS = flags.DEFINE_list(
 )
 _FLASH_ATTENTION_IMPLEMENTATION = flags.DEFINE_enum(
     'flash_attention_implementation',
-    default='triton',
+    default='xla',  # AMD ROCm: Triton not supported on AMD GPUs
     enum_values=['triton', 'cudnn', 'xla'],
     help=(
         "Flash attention implementation to use. 'triton' and 'cudnn' uses a"
@@ -338,7 +367,14 @@ class ModelRunner:
   @functools.cached_property
   def model_params(self) -> hk.Params:
     """Loads model parameters from the model directory."""
-    return params.get_model_haiku_params(model_dir=self._model_dir)
+    loaded_params = params.get_model_haiku_params(model_dir=self._model_dir)
+    # Cast all bf16 params to f32 to avoid LLVM AMDGPU backend crash:
+    # the AMDGPU backend cannot lower uint_to_fp (bool->bf16) instructions
+    # that XLA fusion passes generate when bf16 tensors are in the graph.
+    return jax.tree.map(
+        lambda x: x.astype(jnp.float32) if x.dtype == jnp.bfloat16 else x,
+        loaded_params,
+    )
 
   @functools.cached_property
   def _model(
